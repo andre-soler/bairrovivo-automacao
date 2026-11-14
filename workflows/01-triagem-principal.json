@@ -1,0 +1,257 @@
+{
+  "name": "01 - Triagem principal",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        224,
+        -160
+      ],
+      "id": "2223474b-defa-4f7f-b9dd-2c7952c86719",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "cca9f53e-27c0-43bf-8162-6f7d4a28a497",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT o.id, o.titulo, o.descricao, o.categoria, o.status,\n       o.latitude, o.longitude, o.alias, o.criado_em\nFROM ocorrencias o\nWHERE o.status = 'recebida'\n  AND o.origem = 'cidadao'\n  AND NOT EXISTS (\n        SELECT 1 FROM automacao_log l\n        WHERE l.ocorrencia_id = o.id\n      )\nORDER BY o.id\nLIMIT 20;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        448,
+        0
+      ],
+      "id": "d805385f-a15b-4fa1-a8f8-3f6384048989",
+      "name": "Buscar novas",
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "81610f8e-78cb-4f5a-aa5a-ebd329294808",
+              "name": "id ",
+              "value": "={{ $json.id ?? $json.body?.id }}",
+              "type": "number"
+            },
+            {
+              "id": "0eb95456-d172-4634-86a9-43d2c9abf331",
+              "name": "titulo",
+              "value": "={{ $json.descricao ?? $json.body?.descricao ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "7b369327-de86-4ea2-a561-1220a91a86db",
+              "name": "descricao",
+              "value": "={{ $json.descricao ?? $json.body?.descricao ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "7d15f27a-487b-47ff-99cd-e516ffe2c921",
+              "name": "categoria\t",
+              "value": "={{ $json.categoria ?? $json.body?.categoria }}",
+              "type": "string"
+            },
+            {
+              "id": "ed787ed7-068c-4871-b6fc-7b89ef71e28c",
+              "name": "lat",
+              "value": "={{ $json.latitude ?? $json.body?.latitude }}",
+              "type": "number"
+            },
+            {
+              "id": "73a3b0b7-2d4a-4ee6-8184-024fbebd27f0",
+              "name": "lng",
+              "value": "={{ $json.longitude ?? $json.body?.longitude }}",
+              "type": "number"
+            },
+            {
+              "id": "99b17d58-e405-41ad-a3c4-f1bead8a6ebb",
+              "name": "alias",
+              "value": "={{ $json.alias ?? $json.body?.alias ?? 'anônimo' }}",
+              "type": "string"
+            },
+            {
+              "id": "e81d725b-0bc0-4f5b-becc-866687aba955",
+              "name": "foto_url",
+              "value": "={{ $json.foto_url ?? $json.body?.foto_url ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a8106b2b-c031-42c6-82b5-605ad196d6c5",
+              "name": "entrada",
+              "value": "={{ $json.body ? 'webhook' : 'polling' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        624,
+        0
+      ],
+      "id": "fb578ebd-e2cc-41ad-a37c-1678ab1edd54",
+      "name": "Normalizar"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2508a71c-cdd4-4ae2-a3b5-d15a5d397d94",
+              "name": "cfg_ia_url",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "e279d263-48d1-4ae5-8dc3-0b7355fca78b",
+              "name": "cfg_cv_url",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "76259509-65a3-473b-a762-7042dce45186",
+              "name": "cfg_raio_dup_m",
+              "value": 50,
+              "type": "number"
+            },
+            {
+              "id": "7204adc8-8b0e-4e91-a1db-1985776afec4",
+              "name": "cfg_modo_mock",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        848,
+        0
+      ],
+      "id": "f927083c-9411-4ce8-b91f-d4498b27c083",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nova-ocorrencia",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        208
+      ],
+      "id": "8b2f96f1-fc4a-4e4e-a05d-941dd6dc8095",
+      "name": "Webhook",
+      "webhookId": "cd6b962a-1877-40da-b47c-f6aa3804a803"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Buscar novas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar novas": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Buscar novas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c3a18560-d848-4377-934d-2cfa629b3dff",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4d708ed5e75ed869cc75182e3464adecc0de389078322ad57e4cc3e491a76c97"
+  },
+  "nodeGroups": [],
+  "id": "j44OhJsQiMjkAOAL",
+  "tags": []
+}

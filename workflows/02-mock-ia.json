@@ -1,0 +1,54 @@
+{
+  "name": "02 - Mock IA",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mock-ia",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "id": "7f258bec-3e98-4a2b-ac50-424ee78c1df5",
+      "name": "Webhook mock-ia",
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "7c271ad3-4d50-49af-acf2-bea92121b6f0"
+    },
+    {
+      "parameters": {
+        "jsCode": "// \"IA\" de mentira: classifica pela presenca de palavras-chave.\n// Simula o contrato da API real: { id, categoria_sugerida, confianca, modelo, justificativa }\nconst palavras = {\n  buraco:     ['buraco', 'asfalto', 'pavimento', 'cratera', 'remendo'],\n  iluminacao: ['poste', 'lampada', 'luz', 'iluminacao', 'apagado', 'escuro'],\n  descarte:   ['lixo', 'entulho', 'descarte', 'sujeira', 'residuo', 'sofa'],\n  calcada:    ['calcada', 'passeio', 'acessibilidade', 'rampa', 'piso', 'cadeirante'],\n  mobiliario: ['banco', 'placa', 'ponto de onibus', 'lixeira', 'abrigo', 'mobiliario'],\n};\n\nconst semAcento = (t) => String(t ?? '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();\n\nreturn $input.all().map((item) => {\n  const b = item.json.body ?? item.json;\n  const texto = semAcento(`${b.titulo} ${b.descricao}`);\n\n  let melhor = null, melhorPontos = 0, achadas = [];\n  for (const [categoria, lista] of Object.entries(palavras)) {\n    const encontradas = lista.filter(p => texto.includes(p));\n    if (encontradas.length > melhorPontos) {\n      melhor = categoria; melhorPontos = encontradas.length; achadas = encontradas;\n    }\n  }\n\n  const categoriaSugerida = melhor ?? b.categoria;\n  let confianca = 0.5;\n  if (melhor && melhor === b.categoria) confianca = 0.92;\n  else if (melhor) confianca = 0.65;\n\n  return {\n    json: {\n      id: b.id,\n      categoria_sugerida: categoriaSugerida,\n      confianca,\n      modelo: 'mock-palavras-chave-v1',\n      justificativa: achadas.length ? `palavras encontradas: ${achadas.join(', ')}` : 'nenhuma palavra-chave encontrada',\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "e9548f83-e3d1-4eb9-8914-9da3265e2c8c",
+      "name": "Classificar por palavras-chave",
+      "position": [
+        224,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook mock-ia": {
+      "main": [
+        [
+          {
+            "node": "Classificar por palavras-chave",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

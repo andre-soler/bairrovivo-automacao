@@ -1,0 +1,290 @@
+{
+  "name": "03 - Reprocessador",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "id": "f7238c30-e6bf-4c52-ba84-f6591e6032a7",
+      "name": "A cada 5 minutos",
+      "position": [
+        0,
+        -100
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "id": "94dbc8a9-a4ad-4fd4-ba70-c8128e1c45f9",
+      "name": "When clicking ‘Execute workflow’",
+      "position": [
+        0,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id AS falha_id, ocorrencia_id, payload, tentativas\nFROM automacao_falhas\nWHERE status = 'pendente'\n  AND tentativas < 15\nORDER BY id\nLIMIT 10;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "eba5ae02-568d-460f-94b8-0e8fa6609bf8",
+      "name": "Buscar falhas pendentes",
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recupera a ocorrencia completa que foi guardada na fila de falhas\nreturn $input.all().map((item) => ({\n  json: {\n    ...item.json.payload,\n    falha_id: item.json.falha_id,\n    tentativas_anteriores: item.json.tentativas,\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "c2e7e5fd-67be-43f7-ba27-9597cd9cdf12",
+      "name": "Restaurar ocorrência",
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.cfg_ia_url || 'http://localhost:5678/webhook/mock-ia' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.id, titulo: $json.titulo, descricao: $json.descricao, categoria: $json.categoria }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "4529d61e-8438-4b96-a6be-387bcbf5b941",
+      "name": "Classificar (IA)",
+      "position": [
+        672,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Junta a resposta da IA (real ou mock) com os dados da ocorrencia\nconst bases = $('Restaurar ocorrência').all();\nconst entradas = $input.all();\n\nreturn entradas.map((item, i) => {\n  const r = item.json;\n  let base = bases.find(b => b.json.id === r.id)?.json;\n  if (!base) base = $('Restaurar ocorrência').itemMatching(i).json;\n\n  const categoriaSugerida = r.categoria_sugerida ?? base.categoria;\n  const confianca = Number(r.confianca ?? 0);\n\n  const motivosRevisao = [];\n  if (confianca < 0.7) motivosRevisao.push('confianca baixa da IA');\n  if (categoriaSugerida !== base.categoria) motivosRevisao.push('IA sugeriu outra categoria');\n  if (base.duplicata) motivosRevisao.push('possivel duplicata da ocorrencia ' + base.dup_id);\n\n  return {\n    json: {\n      ...base,\n      categoria_sugerida: categoriaSugerida,\n      confianca,\n      modelo_ia: r.modelo ?? 'desconhecido',\n      justificativa_ia: r.justificativa ?? '',\n      precisa_revisao: motivosRevisao.length > 0,\n      motivos_revisao: motivosRevisao,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "027f14ee-fb47-4cfa-b4f4-abf01809761a",
+      "name": "Juntar classificação",
+      "position": [
+        896,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH atualiza AS (\n  UPDATE ocorrencias\n  SET status = 'em_analise'\n  WHERE id = $1 AND status = 'recebida'\n)\nINSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $2, 'classificar', 'ok', $3::jsonb),\n       ($1, $2, 'encaminhar', $4, $5::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $execution.id, JSON.stringify({ categoria_sugerida: $json.categoria_sugerida, confianca: $json.confianca, modelo: $json.modelo_ia, justificativa: $json.justificativa_ia }), $json.precisa_revisao ? 'revisao' : 'ok', JSON.stringify({ fila: 'zeladoria-' + $json.categoria, status_novo: 'em_analise', precisa_revisao: $json.precisa_revisao, motivos_revisao: $json.motivos_revisao, duplicata: $json.duplicata, dup_id: $json.dup_id }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "05455e14-cbcb-4756-b1d0-e72dc616a45d",
+      "name": "Encaminhar",
+      "position": [
+        1120,
+        -220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH notificacao AS (\n  INSERT INTO automacao_notificacoes (ocorrencia_id, destinatario, canal, mensagem)\n  VALUES ($1, $2, 'email_mock', $3)\n)\nINSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $4, 'notificar', 'ok', $5::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $json.alias, `Olá, ${$json.alias}! Sua ocorrência #${$json.id} (\"${$json.titulo}\") foi recebida e está em análise pela equipe de zeladoria.` + ($json.precisa_revisao ? ' Ela passará por uma revisão manual antes do atendimento.' : ''), $execution.id, JSON.stringify({ canal: 'email_mock', destinatario: $json.alias }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "a3e711d0-e834-47f5-82ec-27c06f0daf33",
+      "name": "Notificar",
+      "position": [
+        1120,
+        -60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH falha AS (\n  UPDATE automacao_falhas\n  SET status = 'reprocessada', tentativas = tentativas + 1, atualizado_em = now()\n  WHERE id = $1\n)\nINSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe, tentativas)\nVALUES ($2, $3, 'reprocessar', 'ok', $4::jsonb, $5);",
+        "options": {
+          "queryReplacement": "={{ [ $json.falha_id, $json.id, $execution.id, JSON.stringify({ falha_id: $json.falha_id }), $json.tentativas_anteriores + 1 ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "4f49606d-03b8-4e05-90ca-c474dba6002f",
+      "name": "Marcar reprocessada",
+      "position": [
+        1120,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE automacao_falhas\nSET tentativas = tentativas + 3, erro = $2, atualizado_em = now()\nWHERE id = $1;",
+        "options": {
+          "queryReplacement": "={{ [ $('Restaurar ocorrência').item.json.falha_id, ($json.error?.message ?? JSON.stringify($json.error ?? $json)) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "541ca897-23d5-4b29-acc8-453775928d0c",
+      "name": "Atualizar tentativas",
+      "position": [
+        896,
+        160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "A cada 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "Buscar falhas pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Buscar falhas pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar falhas pendentes": {
+      "main": [
+        [
+          {
+            "node": "Restaurar ocorrência",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restaurar ocorrência": {
+      "main": [
+        [
+          {
+            "node": "Classificar (IA)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificar (IA)": {
+      "main": [
+        [
+          {
+            "node": "Juntar classificação",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Atualizar tentativas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Juntar classificação": {
+      "main": [
+        [
+          {
+            "node": "Encaminhar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notificar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Marcar reprocessada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

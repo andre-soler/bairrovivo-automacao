@@ -301,6 +301,19 @@
     },
     {
       "parameters": {
+        "jsCode": "// Junta o resultado da busca de duplicidade com os dados completos da ocorrencia\nconst validas = $('Validar').all();\n\nreturn $input.all().map((item) => {\n  const d = item.json;\n  const base = validas.find(v => v.json.id === d.ocorrencia_id).json;\n  const duplicata = d.dup_id != null && d.distancia_m <= base.cfg_raio_dup_m;\n\n  return {\n    json: {\n      ...base,\n      dup_id: d.dup_id ?? null,\n      dup_titulo: d.dup_titulo ?? null,\n      distancia_m: d.distancia_m ?? null,\n      duplicata,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "93ec3d9a-76b8-4f09-a07b-143d819db5b5",
+      "name": "Avaliar duplicidade",
+      "position": [
+        1744,
+        0
+      ]
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -310,8 +323,8 @@
           },
           "conditions": [
             {
-              "id": "cfe204e3-e821-4a2d-832e-b825271874f4",
-              "leftValue": "={{ $json.dup_id != null && $json.distancia_m <= $('Config').item.json.cfg_raio_dup_m }}",
+              "id": "ba3b65a6-4879-4049-ba11-f4eeac4e6af8",
+              "leftValue": "={{ $json.duplicata }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -326,11 +339,11 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "id": "8049dd26-1cb9-4778-aae9-28591b1a23e5",
+      "id": "9f338f13-4f95-4ea1-bc28-edc051b3601a",
       "name": "Duplicata?",
       "position": [
-        1744,
-        0
+        1968,
+        -220
       ]
     },
     {
@@ -338,16 +351,16 @@
         "operation": "executeQuery",
         "query": "INSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $2, 'duplicidade', 'duplicata', $3::jsonb);",
         "options": {
-          "queryReplacement": "={{ [ $json.ocorrencia_id, $execution.id, JSON.stringify({ dup_id: $json.dup_id, dup_titulo: $json.dup_titulo, distancia_m: $json.distancia_m, raio_m: $('Config').item.json.cfg_raio_dup_m }) ] }}"
+          "queryReplacement": "={{ [ $json.id, $execution.id, JSON.stringify({ dup_id: $json.dup_id, dup_titulo: $json.dup_titulo, distancia_m: $json.distancia_m, raio_m: $json.cfg_raio_dup_m }) ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.8,
-      "id": "121c3a59-cce0-4158-a510-de1d0dfa8e55",
+      "id": "d5ab2302-2b5e-4aa6-be8f-94fe1758017b",
       "name": "Registrar duplicata",
       "position": [
-        1968,
-        -110
+        2192,
+        -320
       ],
       "credentials": {
         "postgres": {
@@ -361,16 +374,122 @@
         "operation": "executeQuery",
         "query": "INSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $2, 'duplicidade', 'ok', $3::jsonb);",
         "options": {
-          "queryReplacement": "={{ [ $json.ocorrencia_id, $execution.id, JSON.stringify({ mais_proxima_id: $json.dup_id, distancia_m: $json.distancia_m }) ] }}"
+          "queryReplacement": "={{ [ $json.id, $execution.id, JSON.stringify({ mais_proxima_id: $json.dup_id, distancia_m: $json.distancia_m }) ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.8,
-      "id": "6a4e1bfc-cb99-4fbc-b1bd-c816bdb658bb",
+      "id": "f3e26923-b313-40f5-aa77-540b1951598c",
       "name": "Registrar sem duplicata",
       "position": [
+        2192,
+        -140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.cfg_ia_url || 'http://localhost:5678/webhook/mock-ia' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.id, titulo: $json.titulo, descricao: $json.descricao, categoria: $json.categoria }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "7c0c6d49-5ece-4eda-aa2d-780f7b950e7d",
+      "name": "Classificar (IA)",
+      "position": [
         1968,
-        110
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Junta a resposta da IA (real ou mock) com os dados da ocorrencia\nconst bases = $('Avaliar duplicidade').all();\nconst entradas = $input.all();\n\nreturn entradas.map((item, i) => {\n  const r = item.json;\n  let base = bases.find(b => b.json.id === r.id)?.json;\n  if (!base) base = $('Avaliar duplicidade').itemMatching(i).json;\n\n  const categoriaSugerida = r.categoria_sugerida ?? base.categoria;\n  const confianca = Number(r.confianca ?? 0);\n\n  const motivosRevisao = [];\n  if (confianca < 0.7) motivosRevisao.push('confianca baixa da IA');\n  if (categoriaSugerida !== base.categoria) motivosRevisao.push('IA sugeriu outra categoria');\n  if (base.duplicata) motivosRevisao.push('possivel duplicata da ocorrencia ' + base.dup_id);\n\n  return {\n    json: {\n      ...base,\n      categoria_sugerida: categoriaSugerida,\n      confianca,\n      modelo_ia: r.modelo ?? 'desconhecido',\n      justificativa_ia: r.justificativa ?? '',\n      precisa_revisao: motivosRevisao.length > 0,\n      motivos_revisao: motivosRevisao,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "02490db7-cd18-4013-bcf6-79581d954a91",
+      "name": "Juntar classificação",
+      "position": [
+        2192,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH atualiza AS (\n  UPDATE ocorrencias\n  SET status = 'em_analise'\n  WHERE id = $1 AND status = 'recebida'\n)\nINSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $2, 'classificar', 'ok', $3::jsonb),\n       ($1, $2, 'encaminhar', $4, $5::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $execution.id, JSON.stringify({ categoria_sugerida: $json.categoria_sugerida, confianca: $json.confianca, modelo: $json.modelo_ia, justificativa: $json.justificativa_ia }), $json.precisa_revisao ? 'revisao' : 'ok', JSON.stringify({ fila: 'zeladoria-' + $json.categoria, status_novo: 'em_analise', precisa_revisao: $json.precisa_revisao, motivos_revisao: $json.motivos_revisao, duplicata: $json.duplicata, dup_id: $json.dup_id }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "e6787531-39ef-4b03-b4ef-b01c9e0eac04",
+      "name": "Encaminhar",
+      "position": [
+        2416,
+        -80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH notificacao AS (\n  INSERT INTO automacao_notificacoes (ocorrencia_id, destinatario, canal, mensagem)\n  VALUES ($1, $2, 'email_mock', $3)\n)\nINSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $4, 'notificar', 'ok', $5::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $json.alias, `Olá, ${$json.alias}! Sua ocorrência #${$json.id} (\"${$json.titulo}\") foi recebida e está em análise pela equipe de zeladoria.` + ($json.precisa_revisao ? ' Ela passará por uma revisão manual antes do atendimento.' : ''), $execution.id, JSON.stringify({ canal: 'email_mock', destinatario: $json.alias }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "aa86df89-3d3a-4c33-8719-e2a36abb71c7",
+      "name": "Notificar",
+      "position": [
+        2416,
+        80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH falha AS (\n  INSERT INTO automacao_falhas (ocorrencia_id, etapa, payload, erro, tentativas)\n  VALUES ($1, 'classificar', $2::jsonb, $3, 3)\n)\nINSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe, tentativas)\nVALUES ($1, $4, 'classificar', 'erro', $5::jsonb, 3);",
+        "options": {
+          "queryReplacement": "={{ [ $('Avaliar duplicidade').item.json.id, JSON.stringify($('Avaliar duplicidade').item.json), ($json.error?.message ?? JSON.stringify($json.error ?? $json)), $execution.id, JSON.stringify({ erro: ($json.error?.message ?? JSON.stringify($json.error ?? $json)), enviado_para_fila: true }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "d9afded8-eb66-4455-9022-1453558cfd14",
+      "name": "Enviar para fila",
+      "position": [
+        2192,
+        200
       ],
       "credentials": {
         "postgres": {
@@ -481,7 +600,23 @@
       "main": [
         [
           {
+            "node": "Avaliar duplicidade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avaliar duplicidade": {
+      "main": [
+        [
+          {
             "node": "Duplicata?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Classificar (IA)",
             "type": "main",
             "index": 0
           }
@@ -500,6 +635,40 @@
         [
           {
             "node": "Registrar sem duplicata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificar (IA)": {
+      "main": [
+        [
+          {
+            "node": "Juntar classificação",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar para fila",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Juntar classificação": {
+      "main": [
+        [
+          {
+            "node": "Encaminhar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notificar",
             "type": "main",
             "index": 0
           }

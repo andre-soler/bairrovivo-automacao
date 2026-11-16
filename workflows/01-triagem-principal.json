@@ -59,14 +59,14 @@
           "assignments": [
             {
               "id": "81610f8e-78cb-4f5a-aa5a-ebd329294808",
-              "name": "id ",
+              "name": "id",
               "value": "={{ $json.id ?? $json.body?.id }}",
               "type": "number"
             },
             {
               "id": "0eb95456-d172-4634-86a9-43d2c9abf331",
               "name": "titulo",
-              "value": "={{ $json.descricao ?? $json.body?.descricao ?? '' }}",
+              "value": "={{ $json.titulo ?? $json.body?.titulo }}",
               "type": "string"
             },
             {
@@ -77,7 +77,7 @@
             },
             {
               "id": "7d15f27a-487b-47ff-99cd-e516ffe2c921",
-              "name": "categoria\t",
+              "name": "categoria",
               "value": "={{ $json.categoria ?? $json.body?.categoria }}",
               "type": "string"
             },
@@ -151,6 +151,30 @@
               "name": "cfg_modo_mock",
               "value": true,
               "type": "boolean"
+            },
+            {
+              "id": "d681c796-a6d6-477a-9c78-3e867260c605",
+              "name": "cfg_lat_min",
+              "value": -23.62,
+              "type": "number"
+            },
+            {
+              "id": "0947b551-e99c-4582-92e6-106f8bb91b58",
+              "name": "cfg_lat_max",
+              "value": -23.56,
+              "type": "number"
+            },
+            {
+              "id": "8874b8c2-504d-4b1b-bec0-7ad965b2b954",
+              "name": "cfg_lng_min",
+              "value": -46.66,
+              "type": "number"
+            },
+            {
+              "id": "ad560312-783b-4aff-bb1e-2301e305858b",
+              "name": "cfg_lng_max",
+              "value": -46.6,
+              "type": "number"
             }
           ]
         },
@@ -181,6 +205,179 @@
       "id": "8b2f96f1-fc4a-4e4e-a05d-941dd6dc8095",
       "name": "Webhook",
       "webhookId": "cd6b962a-1877-40da-b47c-f6aa3804a803"
+    },
+    {
+      "parameters": {
+        "jsCode": "const categorias = ['buraco', 'iluminacao', 'descarte', 'calcada', 'mobiliario'];\n\nfor (const item of $input.all()) {\n  const o = item.json;\n  const motivos = [];\n\n  if (!o.titulo || o.titulo.trim().length < 5) {\n    motivos.push('titulo muito curto');\n  }\n  const cat = String(o.categoria ?? '').trim().toLowerCase();\n  if (!categorias.includes(cat)) {\n    motivos.push(`categoria invalida: \"${o.categoria}\"`);\n  }\n  if (typeof o.lat !== 'number' || o.lat < o.cfg_lat_min || o.lat > o.cfg_lat_max) {\n    motivos.push('latitude fora da area piloto');\n  }\n  if (typeof o.lng !== 'number' || o.lng < o.cfg_lng_min || o.lng > o.cfg_lng_max) {\n    motivos.push('longitude fora da area piloto');\n  }\n\n  item.json.valida = motivos.length === 0;\n  item.json.motivos = motivos;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "09795539-0e65-468f-8630-67eb93a3872a",
+      "name": "Validar",
+      "position": [
+        1072,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "592c9114-48be-4cd4-a4da-ef7c95e1349e",
+              "leftValue": "={{ $json.valida }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "d2a6d857-b3aa-4db4-b662-73d33208d307",
+      "name": "Válida?",
+      "position": [
+        1296,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH atualiza AS (\n  UPDATE ocorrencias\n  SET status = 'nao_procedente'\n  WHERE id = $1\n)\nINSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $2, 'validar', 'invalida', $3::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $execution.id, JSON.stringify({ motivos: $json.motivos, entrada: $json.entrada }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "db8885a8-2267-4a38-b2a6-1613faaa7e69",
+      "name": "Registrar inválida",
+      "position": [
+        1520,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  $1::int AS ocorrencia_id,\n  d.id     AS dup_id,\n  d.titulo AS dup_titulo,\n  ROUND(d.distancia_m::numeric, 1)::float8 AS distancia_m\nFROM (SELECT 1) AS base\nLEFT JOIN LATERAL (\n  SELECT o.id, o.titulo,\n         6371000 * 2 * ASIN(SQRT(\n           POWER(SIN(RADIANS(o.latitude - $3::float8) / 2), 2) +\n           COS(RADIANS($3::float8)) * COS(RADIANS(o.latitude)) *\n           POWER(SIN(RADIANS(o.longitude - $4::float8) / 2), 2)\n         )) AS distancia_m\n  FROM ocorrencias o\n  WHERE o.id <> $1::int\n    AND o.categoria = $2\n    AND o.status NOT IN ('resolvida', 'nao_procedente')\n  ORDER BY distancia_m\n  LIMIT 1\n) AS d ON true;",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $json.categoria, $json.lat, $json.lng ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "29b69fca-8a48-4b11-95f5-af4ce4c22feb",
+      "name": "Buscar duplicata",
+      "position": [
+        1520,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cfe204e3-e821-4a2d-832e-b825271874f4",
+              "leftValue": "={{ $json.dup_id != null && $json.distancia_m <= $('Config').item.json.cfg_raio_dup_m }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "8049dd26-1cb9-4778-aae9-28591b1a23e5",
+      "name": "Duplicata?",
+      "position": [
+        1744,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $2, 'duplicidade', 'duplicata', $3::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.ocorrencia_id, $execution.id, JSON.stringify({ dup_id: $json.dup_id, dup_titulo: $json.dup_titulo, distancia_m: $json.distancia_m, raio_m: $('Config').item.json.cfg_raio_dup_m }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "121c3a59-cce0-4158-a510-de1d0dfa8e55",
+      "name": "Registrar duplicata",
+      "position": [
+        1968,
+        -110
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO automacao_log (ocorrencia_id, execucao_id, etapa, resultado, detalhe)\nVALUES ($1, $2, 'duplicidade', 'ok', $3::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ $json.ocorrencia_id, $execution.id, JSON.stringify({ mais_proxima_id: $json.dup_id, distancia_m: $json.distancia_m }) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "id": "6a4e1bfc-cb99-4fbc-b1bd-c816bdb658bb",
+      "name": "Registrar sem duplicata",
+      "position": [
+        1968,
+        110
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "EfMzb9gFgmZMMPCA",
+          "name": "Postgres account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -234,6 +431,75 @@
         [
           {
             "node": "Buscar novas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar": {
+      "main": [
+        [
+          {
+            "node": "Válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Válida?": {
+      "main": [
+        [
+          {
+            "node": "Buscar duplicata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar duplicata": {
+      "main": [
+        [
+          {
+            "node": "Duplicata?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicata?": {
+      "main": [
+        [
+          {
+            "node": "Registrar duplicata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar sem duplicata",
             "type": "main",
             "index": 0
           }

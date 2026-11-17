@@ -1,2 +1,3 @@
-﻿.env
-outra-coisa
+.env
+deploy/.env
+deploy/.instalado

@@ -101,6 +101,18 @@ Se algum nó Postgres aparecer sem credencial depois da importação, selecione 
 
 Para parar sem perder dados: `docker compose down`. O `docker compose down -v` apaga os volumes, inclusive os workflows do n8n.
 
+## Produção
+
+Em produção, a automação roda **na mesma VM Azure do MVP**, num projeto Compose separado que só entra na rede interna do MVP para enxergar o banco. Nenhuma porta nova é aberta, nenhum arquivo do repositório do MVP muda e a senha do banco é lida do `.env` que já existe na VM.
+
+| Item | Valor |
+|---|---|
+| URL pública do MVP | http://172.173.103.106 |
+| Painel do n8n | só por túnel SSH: `ssh -L 5678:localhost:5678 azureuser@172.173.103.106` |
+| Instalação | `sudo bash deploy/instalar-na-vm.sh` (na VM) |
+
+Passo a passo, arquitetura e operação: [`deploy/PRODUCAO.md`](deploy/PRODUCAO.md).
+
 ## Demonstração: os três cenários
 
 **1. Registro normal**
@@ -154,8 +166,12 @@ As evidências (prints das execuções e do banco) estão em [`docs/evidencias/`
 
 ```
 .
-├── docker-compose.yml        # db + app (MVP) + n8n
+├── docker-compose.yml        # ambiente local: db + app (MVP) + n8n
 ├── .env.example              # variáveis sem segredos
+├── deploy/
+│   ├── docker-compose.prod.yml   # produção: só o n8n, na rede do MVP
+│   ├── instalar-na-vm.sh         # instalação na VM
+│   └── PRODUCAO.md
 ├── sql/
 │   └── 001_tabelas_automacao.sql
 ├── workflows/
@@ -173,6 +189,7 @@ As evidências (prints das execuções e do banco) estão em [`docs/evidencias/`
 - A classificação usa um mock por palavras-chave até a API de IA da outra disciplina existir.
 - A notificação é simulada: a mensagem é gravada em tabela, não enviada.
 - A entrada por polling tem até 1 minuto de atraso.
+- Em produção, a automação depende da VM do MVP: se ela for destruída (`terraform destroy`), basta rodar o script de instalação de novo depois do `terraform apply`.
 - O webhook de entrada ainda não tem autenticação; antes de expor fora da máquina local, ele precisa de um token (Header Auth).
 
 ## Grupo

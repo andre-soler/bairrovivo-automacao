@@ -56,6 +56,14 @@ for i in $(seq 1 30); do
   sleep 2
 done
 curl -fsS http://127.0.0.1:5678/healthz >/dev/null || erro "n8n não respondeu em 60 s: $COMPOSE logs n8n"
+# O healthz responde antes do n8n terminar as migrations do banco interno.
+# Rodar comandos da CLI nesse meio-tempo causa disputa ("duplicate column").
+echo "aguardando o n8n terminar de inicializar..."
+for i in $(seq 1 60); do
+  docker logs "$N8N_CONTAINER" 2>&1 | grep -q "Editor is now accessible" && break
+  sleep 2
+done
+docker logs "$N8N_CONTAINER" 2>&1 | grep -q "Editor is now accessible" || erro "n8n não terminou de iniciar em 2 min: docker logs $N8N_CONTAINER"
 echo "n8n no ar em 127.0.0.1:5678 (só dentro da VM)"
 
 MARCA="$DIR/deploy/.instalado"
@@ -72,6 +80,8 @@ else
 JSON
   docker cp "$TMP" "$N8N_CONTAINER":/tmp/cred.json
   rm -f "$TMP"
+  # o n8n roda como "node" dentro do container; o arquivo chegou como root (600)
+  docker exec -u root "$N8N_CONTAINER" chown node:node /tmp/cred.json
   docker exec "$N8N_CONTAINER" n8n import:credentials --input=/tmp/cred.json
   docker exec -u root "$N8N_CONTAINER" rm -f /tmp/cred.json
 

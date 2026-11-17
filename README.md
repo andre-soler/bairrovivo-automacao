@@ -8,6 +8,8 @@ Automação da triagem de ocorrências do **BairroVivo**, a plataforma de zelado
 |---|---|
 | MVP (disciplina de DevOps) | https://github.com/victorasfur/bairrovivo-secure |
 | Este repositório | https://github.com/andre-soler/bairrovivo-automacao |
+| Relatório técnico (PDF) | [`docs/Relatorio_RPA_BairroVivo.pdf`](docs/Relatorio_RPA_BairroVivo.pdf) |
+| Vídeo demonstrativo | [inserir link do vídeo] |
 
 ---
 
@@ -27,6 +29,8 @@ Cada etapa grava uma linha em `automacao_log` com o resultado, um detalhe em JSO
 ![Diagrama da automação](docs/diagrama-automacao.png)
 
 ## Os três workflows
+
+A automação foi feita em **n8n**, e não em Python ou Power Automate. Por isso não há as pastas `src/` nem `power-automate/`: os fluxos exportados ficam em [`workflows/`](workflows/), em JSON, e podem ser importados em qualquer n8n.
 
 | Arquivo | Workflow | Função |
 |---|---|---|
@@ -142,7 +146,7 @@ docker compose exec db psql -U bairrovivo -d bairrovivo -c "SELECT ocorrencia_id
 docker compose exec db psql -U bairrovivo -d bairrovivo -c "SELECT id, ocorrencia_id, status, tentativas, erro FROM automacao_falhas;"
 ```
 
-As evidências (prints das execuções e do banco) estão em [`docs/evidencias/`](docs/evidencias/).
+Os testes detalhados estão em [`tests/`](tests/), as evidências visuais em [`assets/`](assets/) e amostras do log em [`logs/`](logs/).
 
 ## Decisões de projeto
 
@@ -178,9 +182,12 @@ As evidências (prints das execuções e do banco) estão em [`docs/evidencias/`
 │   ├── 01-triagem-principal.json
 │   ├── 02-mock-ia.json
 │   └── 03-reprocessador.json
-└── docs/
-    ├── diagrama-automacao.pdf / .png
-    └── evidencias/
+├── docs/
+│   ├── diagrama-automacao.pdf / .png   # fluxograma
+│   └── Relatorio_RPA_BairroVivo.pdf    # relatório técnico
+├── tests/                    # cenários de teste (sucesso, decisão e falha)
+├── logs/                     # amostras do automacao_log, sem dados pessoais
+└── assets/                   # prints das execuções
 ```
 
 ## Limitações
@@ -194,4 +201,10 @@ As evidências (prints das execuções e do banco) estão em [`docs/evidencias/`
 
 ## Grupo
 
-André Solér · Fabrizio Maia Apparicio · Rodrigo Paixão · Victor Miguel Gouveia Asfur · Vitor Shimizu Farias de Campos
+| RM | Nome |
+|---|---|
+| RM98827 | André Solér |
+| RM551869 | Fabrizio Maia Apparicio |
+| RM96869 | Rodrigo Paixão |
+| RM551684 | Victor Miguel Gouveia Asfur |
+| RM550390 | Vitor Shimizu Farias de Campos |

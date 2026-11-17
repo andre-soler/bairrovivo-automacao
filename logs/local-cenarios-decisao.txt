@@ -1,0 +1,14 @@
+# Amostra do automacao_log no ambiente LOCAL (testes dos cenários de decisão)
+# Data: 16/11/2026 — dados 100% fictícios, sem dados pessoais.
+
+ ocorrencia_id |    etapa    | resultado |                                   detalhe
+---------------+-------------+-----------+------------------------------------------------------------------------------------------
+            42 | validar     | invalida  | {"entrada": "polling", "motivos": ["latitude fora da area piloto", "longitude fora da area piloto"]}
+            41 | duplicidade | ok        | {"distancia_m": 339.5, "mais_proxima_id": 9}
+            43 | duplicidade | duplicata | {"dup_id": 41, "raio_m": 50, "dup_titulo": "Buraco no meio da rua", "distancia_m": 6.6}
+(3 rows)
+
+# Leitura:
+# - 42: ponto fora da área piloto -> rejeitada ("nao_procedente") com os motivos.
+# - 41: a ocorrência da mesma categoria mais próxima estava a 339,5 m -> sem duplicata.
+# - 43: registrada a 6,6 m da 41, mesma categoria -> possível duplicata (dentro do raio de 50 m).

@@ -1,0 +1,12 @@
+# Amostra do automacao_log em PRODUÇÃO (VM Azure do MVP)
+# Data: 17/11/2026 — horários em UTC (19:00 UTC = 16:00 em Brasília)
+# Sem dados pessoais: apenas IDs, etapas, resultados e horários.
+# Ocorrência 41 = "Buraco na rua", registrada por cidadão no site público.
+
+ id | ocorrencia_id |    etapa    | resultado | tentativas |          criado_em
+----+---------------+-------------+-----------+------------+-------------------------------
+  1 |            41 | duplicidade | ok        |          1 | 2026-11-17 19:00:05.130187+00
+  2 |            41 | classificar | ok        |          1 | 2026-11-17 19:00:06.029606+00
+  3 |            41 | encaminhar  | ok        |          1 | 2026-11-17 19:00:06.029606+00
+  4 |            41 | notificar   | ok        |          1 | 2026-11-17 19:00:06.123776+00
+(4 rows)
